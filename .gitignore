@@ -1,0 +1,5 @@
+build/
+furnace/
+*.so
+*.fyl
+CMakeUserPresets.json

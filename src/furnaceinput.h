@@ -3,15 +3,19 @@
  *
  * Provides:
  *  - FurnaceReader:  metadata extraction (title, author, system, duration)
- *  - FurnaceDecoder: audio decoding via Furnace's DivEngine
+ *  - FurnaceDecoder: audio decoding via Furnace's DivEngine (streaming)
  */
 
 #pragma once
 
 #include <core/engine/audioinput.h>
 
+#include <atomic>
+#include <condition_variable>
 #include <memory>
 #include <mutex>
+#include <string>
+#include <thread>
 #include <vector>
 
 class DivEngine;
@@ -35,15 +39,28 @@ public:
     AudioBuffer readBuffer(size_t bytes) override;
 
 private:
+    void renderThread();
+
     AudioFormat m_format;
     uint64_t m_currentPos{0};
     bool m_isDecoding{false};
 
-    // Pre-rendered audio buffer for thread safety:
-    // init() renders the entire track upfront so readBuffer() just
-    // serves from the buffer without touching DivEngine.
-    std::vector<float> m_audioData; // interleaved L/R
-    size_t m_audioOffset{0};
+    // File data for render thread (set before thread launch)
+    unsigned char* m_fileData{nullptr};
+    size_t m_fileSize{0};
+    std::string m_filePath;
+
+    // Streaming buffer from render thread to readBuffer()
+    std::mutex m_bufMutex;
+    std::condition_variable m_bufReady;
+    std::vector<float> m_audioData;   // interleaved L/R
+    size_t m_writeOffset{0};          // render thread writes here
+    size_t m_readOffset{0};           // readBuffer() reads from here
+    bool m_renderDone{false};         // render thread finished
+
+    // Render thread
+    std::thread m_renderWorker;
+    std::atomic<bool> m_stopRender{false};
 };
 
 class FurnaceReader : public AudioReader
